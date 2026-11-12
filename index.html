@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP.DOG // Jogo da Memória - Aprenda Status HTTP</title>
+    
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Configuração personalizada do Tailwind -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e32',
+                            925: '#0b101d',
+                            950: '#070b14',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Estilos customizados para animações 3D (Flip), efeitos visuais e responsividade do jogo -->
+    <style>
+        body {
+            background-color: #0b1120;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(16, 185, 129, 0.07) 0%, transparent 40%),
+                linear-gradient(rgba(30, 41, 59, 0.25) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 59, 0.25) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+            color: #f1f5f9;
+            overflow-x: hidden;
+        }
+
+        /* Perspectiva e estrutura 3D para o efeito de virar a carta */
+        .card-container {
+            perspective: 1100px;
+            -webkit-perspective: 1100px;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+            transform-style: preserve-3d;
+            -webkit-transform-style: preserve-3d;
+        }
+
+        .card-container.is-flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            border-radius: 0.875rem;
+            overflow: hidden;
+        }
+
+        .card-front {
+            transform: rotateY(180deg);
+        }
+
+        /* Padrão visual do verso da carta */
+        .card-back-pattern {
+            background-color: #1e293b;
+            background-image: 
+                radial-gradient(rgba(56, 189, 248, 0.16) 1.25px, transparent 1.25px),
+                linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+            background-size: 14px 14px, 100% 100%;
+        }
+
+        /* Brilho, pulso e leve transparência ao acertar um par (preservando rotateY(180deg)) */
+        @keyframes matchPulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.65); transform: rotateY(180deg) scale(1); }
+            45% { box-shadow: 0 0 22px 4px rgba(16, 185, 129, 0.45); transform: rotateY(180deg) scale(1.03); }
+            100% { box-shadow: 0 0 12px 1px rgba(16, 185, 129, 0.25); transform: rotateY(180deg) scale(1); }
+        }
+
+        .card-container.is-matched {
+            opacity: 0.62;
+            transition: opacity 0.45s ease;
+        }
+
+        .card-container.is-matched:hover {
+            opacity: 0.92;
+        }
+
+        .card-container.is-matched .card-front {
+            animation: matchPulse 0.6s ease-out forwards;
+            border-color: rgba(16, 185, 129, 0.75) !important;
+        }
+
+        /* Tremor suave quando o par está incorreto */
+        @keyframes mismatchShake {
+            0%, 100% { transform: rotateY(180deg) translateX(0); }
+            25% { transform: rotateY(180deg) translateX(-6px); }
+            75% { transform: rotateY(180deg) translateX(6px); }
+        }
+
+        .card-container.is-mismatch .card-inner {
+            animation: mismatchShake 0.35s ease-in-out;
+        }
+
+        /* Animação de skeleton loading enquanto a imagem JPEG carrega */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .skeleton-loader {
+            background: linear-gradient(90deg, #111827 25%, #1e293b 50%, #111827 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite linear;
+        }
+
+        /* Recorte CSS para ocultar a faixa preta inferior com o código na foto antes do acerto */
+        .photo-cropped {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: top;
+            transform: scale(1.28);
+            transform-origin: top center;
+            transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* Exibição completa da foto após o acerto ou quando o jogador desativa o recorte */
+        .photo-full {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: #090d16;
+            transform: scale(1);
+            transform-origin: top center;
+            transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        /* Scrollbar estilizada */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b101d;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+
+    <!-- ================= CABEÇALHO E CONTROLES ================= -->
+    <header class="sticky top-0 z-30 backdrop-blur-md bg-[#0b1120]/90 border-b border-slate-800/90">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3">
+            <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+                
+                <!-- Identidade Visual -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-cyan-500/20 shrink-0">
+                            <!-- Ícone SVG de Cachorro / Terminal HTTP -->
+                            <svg class="w-6 h-6 text-slate-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M10 5.172C10 3.782 8.423 2.679 6.5 3c-2.823.47-4.113 6.006-4 7 .08.703 1.725 1.722 3.656 1 1.261-.472 1.96-1.45 2.344-2.5"/>
+                                <path d="M14.267 5.172c0-1.39 1.577-2.493 3.5-2.172 2.823.47 4.113 6.006 4 7-.08.703-1.725 1.722-3.656 1-1.261-.472-1.855-1.45-2.239-2.5"/>
+                                <path d="M8 14v.5"/>
+                                <path d="M16 14v.5"/>
+                                <path d="M11.25 16.25h1.5L12 17l-.75-.75Z"/>
+                                <path d="M4.42 11.247A13.152 13.152 0 0 0 4 14.556C4 18.728 7.582 21 12 21s8-2.272 8-6.444c0-1.061-.162-2.2-.493-3.309m-9.243-6.082A8.801 8.801 0 0 1 12 5c.78 0 1.5.108 2.161.306"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white">
+                                    HTTP.DOG <span class="text-cyan-400 font-mono font-semibold">// Jogo da Memória</span>
+                                </h1>
+                                <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                                    Código ↔ Cachorro
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-400">Relacione cada Código de Status HTTP com a foto correspondente</p>
+                        </div>
+                    </div>
+
+                    <!-- Botões rápidos mobile (Áudio & Guia) -->
+                    <div class="flex items-center gap-2 xl:hidden">
+                        <button id="btn-audio-mobile" type="button" title="Alternar efeitos sonoros" class="p-2.5 rounded-xl bg-[#1e293b] border border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600 transition">
+                            <span class="audio-icon">🔊</span>
+                        </button>
+                        <button id="btn-guide-mobile" type="button" class="px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700/80 text-xs font-semibold text-cyan-400 hover:bg-slate-800 transition">
+                            Guia (16)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Seletores de Tamanho, Switch de Legenda e Ações -->
+                <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                    
+                    <!-- Switch: Ocultar legenda da foto (ativado por padrão) -->
+                    <label for="toggle-hide-caption" class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#1e293b]/90 border border-slate-700/80 cursor-pointer select-none hover:border-slate-600 transition">
+                        <input id="toggle-hide-caption" type="checkbox" checked class="sr-only peer">
+                        <div class="w-9 h-5 shrink-0 bg-slate-700 rounded-full relative transition-colors peer-checked:bg-cyan-500 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-4 after:h-4 after:rounded-full after:shadow-sm after:transition-transform peer-checked:after:translate-x-4"></div>
+                        <span class="text-xs font-medium text-slate-200">Ocultar legenda da foto</span>
+                    </label>
+
+                    <!-- Seletor de Tamanho do Tabuleiro (6, 8 ou 16 pares) -->
+                    <div class="flex items-center bg-[#1e293b]/90 p-1 rounded-xl border border-slate-700/80 flex-1 sm:flex-initial">
+                        <button id="size-6" type="button" data-size="6" class="size-btn flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all text-slate-400 hover:text-white">
+                            6 Pares (12)
+                        </button>
+                        <button id="size-8" type="button" data-size="8" class="size-btn flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all bg-cyan-500 text-slate-950 shadow-sm">
+                            8 Pares (16)
+                        </button>
+                        <button id="size-16" type="button" data-size="16" class="size-btn flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all text-slate-400 hover:text-white">
+                            Completo: 16 Pares (32)
+                        </button>
+                    </div>
+
+                    <!-- Controles Extras Desktop -->
+                    <div class="hidden xl:flex items-center gap-2">
+                        <button id="btn-audio-desktop" type="button" title="Alternar som" class="p-2 rounded-xl bg-[#1e293b] border border-slate-700/80 text-slate-300 hover:text-white hover:border-slate-600 transition">
+                            <span class="audio-icon">🔊</span>
+                        </button>
+                        <button id="btn-guide-desktop" type="button" class="px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700/80 text-xs font-semibold text-cyan-400 hover:bg-slate-800 hover:border-cyan-500/40 transition flex items-center gap-1.5">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                            Guia dos 16 Endpoints
+                        </button>
+                    </div>
+
+                    <!-- Botão Nova Partida -->
+                    <button id="btn-restart" type="button" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/15 transition active:scale-95 flex items-center gap-1.5 ml-auto sm:ml-0">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Nova Partida
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ================= CONTEÚDO PRINCIPAL ================= -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-5 flex flex-col gap-4 sm:gap-5">
+
+        <!-- Painel de Métricas / Placar em Tempo Real -->
+        <section aria-label="Placar do Jogo" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+            <!-- Pares Encontrados -->
+            <div class="bg-[#1e293b]/80 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-xs text-slate-400 font-medium">
+                    <span>Pares Encontrados</span>
+                    <span class="text-emerald-400 font-mono">MATCH</span>
+                </div>
+                <div class="mt-1.5 flex items-baseline justify-between">
+                    <span id="stat-pairs" class="text-xl sm:text-2xl font-extrabold font-mono text-white">0 / 8</span>
+                    <span id="stat-percent" class="text-xs font-mono text-emerald-400">0%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-800 rounded-full mt-2 overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Tentativas -->
+            <div class="bg-[#1e293b]/80 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-xs text-slate-400 font-medium">
+                    <span>Tentativas</span>
+                    <span class="text-cyan-400 font-mono">REQ</span>
+                </div>
+                <div class="mt-1.5 flex items-baseline justify-between">
+                    <span id="stat-moves" class="text-xl sm:text-2xl font-extrabold font-mono text-white">0</span>
+                    <span class="text-[11px] text-slate-400">jogadas</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1.5 truncate">Cada par testado = 1 tentativa</p>
+            </div>
+
+            <!-- Precisão -->
+            <div class="bg-[#1e293b]/80 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-xs text-slate-400 font-medium">
+                    <span>Precisão</span>
+                    <span class="text-sky-400 font-mono">ACC</span>
+                </div>
+                <div class="mt-1.5 flex items-baseline justify-between">
+                    <span id="stat-accuracy" class="text-xl sm:text-2xl font-extrabold font-mono text-white">100%</span>
+                    <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Código ↔ Foto</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1.5 truncate">Acertos sobre tentativas</p>
+            </div>
+
+            <!-- Cronômetro -->
+            <div class="bg-[#1e293b]/80 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-col justify-between">
+                <div class="flex items-center justify-between text-xs text-slate-400 font-medium">
+                    <span>Cronômetro</span>
+                    <span class="text-amber-400 font-mono">TTL</span>
+                </div>
+                <div class="mt-1.5 flex items-baseline justify-between">
+                    <span id="stat-timer" class="text-xl sm:text-2xl font-extrabold font-mono text-white">00:00</span>
+                    <span id="timer-status" class="text-[11px] font-mono text-slate-400">pronto</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1.5 truncate">Inicia ao virar a 1ª carta</p>
+            </div>
+        </section>
+
+        <!-- Tabuleiro do Jogo da Memória -->
+        <section aria-label="Tabuleiro de Cartas" class="flex-1 flex items-center justify-center">
+            <div id="game-board" class="w-full grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+                <!-- As cartas serão injetadas dinamicamente via JavaScript -->
+            </div>
+        </section>
+
+        <!-- Painel de Aprendizado & Telemetria HTTP (Barra de Status Dinâmica) -->
+        <section aria-label="Painel de Aprendizado e Telemetria HTTP" id="learning-panel" class="bg-[#1e293b]/90 border border-slate-700/90 rounded-2xl p-3.5 sm:p-4 shadow-xl transition-all duration-300">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                
+                <!-- Terminal / Requisição HTTP -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#0b1120] text-cyan-400 border border-slate-700">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            TELEMETRIA HTTP
+                        </span>
+                        <code id="inspector-request" class="text-xs sm:text-sm font-mono text-slate-200 truncate">
+                            GET https://http.dog/{codigo}.jpg
+                        </code>
+                        <span class="text-slate-500 font-mono text-xs">→</span>
+                        <span id="inspector-http-status" class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            Status: 200 OK (image/jpeg • Cache Cloudflare)
+                        </span>
+                    </div>
+
+                    <!-- Explicação Didática do Último Par Descoberto ou Inspecionado -->
+                    <div id="inspector-content" class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-2">
+                        <span id="inspector-category" class="self-start sm:self-auto px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#0b1120] text-slate-300 border border-slate-700 shrink-0">
+                            Aguardando Par
+                        </span>
+                        <div class="min-w-0">
+                            <h2 id="inspector-title" class="text-sm sm:text-base font-bold text-white leading-snug">
+                                Vire duas cartas para relacionar o Código HTTP com a Foto do Cachorro!
+                            </h2>
+                            <p id="inspector-desc" class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                                Ao acertar um par (ou clicar em cartas já combinadas), a explicação completa do status aparecerá aqui.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Miniatura do Cachorro Descoberto -->
+                <div id="inspector-preview-box" class="hidden sm:flex items-center gap-3 bg-[#0b1120]/90 border border-slate-700/80 rounded-xl p-2 shrink-0">
+                    <img id="inspector-thumb" src="https://http.dog/200.jpg" alt="Prévia HTTP Dog" class="w-16 h-12 object-cover rounded-lg border border-slate-700">
+                    <div class="pr-2">
+                        <div class="text-[10px] font-mono uppercase tracking-wider text-slate-400">Endpoint Real</div>
+                        <div id="inspector-endpoint-short" class="text-xs font-mono font-bold text-emerald-400">/200.jpg</div>
+                        <div class="text-[10px] font-mono text-slate-400">200 OK • JPEG</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ================= RODAPÉ INFORMATIVO ================= -->
+    <footer class="border-t border-slate-800/90 bg-[#0b1120] py-3 px-4 mt-2">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-400">
+            <p>
+                Utiliza exclusivamente os <span class="text-slate-200 font-semibold">16 endpoints testados</span> da API <a href="https://http.dog" target="_blank" rel="noopener noreferrer" class="text-cyan-400 hover:underline font-mono">https://http.dog</a>.
+            </p>
+            <p class="font-mono text-[11px] text-slate-400">
+                Retorno padrão da API: <span class="text-emerald-400">Status 200 OK</span> • <span class="text-slate-300">Content-Type: image/jpeg</span>
+            </p>
+        </div>
+    </footer>
+
+    <!-- ================= MODAL DE VITÓRIA ================= -->
+    <div id="victory-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-[#0b1120]/85 backdrop-blur-md">
+        <div class="bg-[#1e293b] border border-slate-700 rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl transform transition-all relative overflow-hidden">
+            <!-- Faixa decorativa superior -->
+            <div class="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500"></div>
+
+            <div class="text-center">
+                <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-3xl mb-4 shadow-lg shadow-emerald-500/10">
+                    🏆
+                </div>
+                <span class="inline-block px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mb-2">
+                    HTTP 200 OK — TODOS OS PARES RELACIONADOS!
+                </span>
+                <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                    Parabéns, você venceu!
+                </h2>
+                <p id="victory-subtitle" class="text-sm text-slate-300 mt-1.5">
+                    Você associou corretamente todos os códigos de status HTTP às suas imagens.
+                </p>
+            </div>
+
+            <!-- Resumo de Desempenho -->
+            <div class="grid grid-cols-3 gap-3 my-6">
+                <div class="bg-[#0b1120]/90 border border-slate-700/80 rounded-2xl p-3 text-center">
+                    <div class="text-[11px] font-mono text-slate-400 uppercase">Tempo</div>
+                    <div id="win-time" class="text-lg sm:text-xl font-extrabold font-mono text-amber-400 mt-0.5">00:00</div>
+                </div>
+                <div class="bg-[#0b1120]/90 border border-slate-700/80 rounded-2xl p-3 text-center">
+                    <div class="text-[11px] font-mono text-slate-400 uppercase">Tentativas</div>
+                    <div id="win-moves" class="text-lg sm:text-xl font-extrabold font-mono text-cyan-400 mt-0.5">0</div>
+                </div>
+                <div class="bg-[#0b1120]/90 border border-slate-700/80 rounded-2xl p-3 text-center">
+                    <div class="text-[11px] font-mono text-slate-400 uppercase">Precisão</div>
+                    <div id="win-accuracy" class="text-lg sm:text-xl font-extrabold font-mono text-emerald-400 mt-0.5">100%</div>
+                </div>
+            </div>
+
+            <!-- Lista de Códigos Aprendidos na Partida -->
+            <div class="mb-6">
+                <div class="text-xs font-semibold text-slate-300 mb-2">Status HTTP praticados nesta rodada:</div>
+                <div id="win-codes-list" class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2.5 rounded-xl bg-[#0b1120]/80 border border-slate-700/80">
+                    <!-- Badges dos códigos injetados via JS -->
+                </div>
+            </div>
+
+            <!-- Botões de Ação -->
+            <div class="flex flex-col sm:flex-row gap-2.5">
+                <button id="btn-view-board" type="button" class="sm:flex-1 py-3.5 px-4 rounded-xl bg-[#0b1120] hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold text-sm transition active:scale-95">
+                    Ver Tabuleiro
+                </button>
+                <button id="btn-play-again" type="button" class="sm:flex-[2] py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95">
+                    Jogar Novamente (Nova Partida)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= MODAL GUIA DOS 16 ENDPOINTS ================= -->
+    <div id="guide-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-3 sm:p-6 bg-[#0b1120]/85 backdrop-blur-md">
+        <div class="bg-[#1e293b] border border-slate-700 rounded-3xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-start sm:items-center justify-between px-5 py-4 border-b border-slate-700/90 gap-3">
+                <div>
+                    <h3 class="text-lg font-extrabold text-white">Guia dos 16 Endpoints Testados</h3>
+                    <p class="text-xs text-slate-300 mt-0.5">
+                        Nota técnica: Independentemente do código na URL, a API <code class="text-cyan-400">http.dog</code> sempre retorna <code class="text-emerald-400 font-semibold">200 OK</code> com <code class="text-cyan-400 font-semibold">Content-Type: image/jpeg</code> (servido como arquivo estático via cache Cloudflare).
+                    </p>
+                </div>
+                <button id="btn-close-guide" type="button" class="p-2 rounded-xl bg-[#0b1120] text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="guide-list" class="p-4 sm:p-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <!-- Preenchido via JS com os 16 endpoints -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= LÓGICA DO JOGO (JAVASCRIPT) ================= -->
+    <script>
+        /**
+         * Base de dados contendo EXCLUSIVAMENTE os 16 endpoints testados da API http.dog.
+         */
+        const HTTP_ENDPOINTS = [
+            {
+                code: 200,
+                url: 'https://http.dog/200.jpg',
+                endpoint: '/200.jpg',
+                officialName: 'OK',
+                title: '200 OK',
+                meaning: 'Sucesso: A requisição foi bem-sucedida.',
+                category: '2xx',
+                categoryLabel: '2xx • Sucesso'
+            },
+            {
+                code: 204,
+                url: 'https://http.dog/204.jpg',
+                endpoint: '/204.jpg',
+                officialName: 'No Content',
+                title: '204 No Content',
+                meaning: 'Sem Conteúdo: Sucesso, mas sem corpo na resposta.',
+                category: '2xx',
+                categoryLabel: '2xx • Sucesso'
+            },
+            {
+                code: 206,
+                url: 'https://http.dog/206.jpg',
+                endpoint: '/206.jpg',
+                officialName: 'Partial Content',
+                title: '206 Partial Content',
+                meaning: 'Conteúdo Parcial: Entrega apenas parte do recurso (ex: streaming/downloads).',
+                category: '2xx',
+                categoryLabel: '2xx • Sucesso'
+            },
+            {
+                code: 300,
+                url: 'https://http.dog/300.jpg',
+                endpoint: '/300.jpg',
+                officialName: 'Multiple Choices',
+                title: '300 Multiple Choices',
+                meaning: 'Múltiplas Escolhas: Há mais de uma opção de resposta/redirecionamento disponível.',
+                category: '3xx',
+                categoryLabel: '3xx • Redirecionamento'
+            },
+            {
+                code: 401,
+                url: 'https://http.dog/401.jpg',
+                endpoint: '/401.jpg',
+                officialName: 'Unauthorized',
+                title: '401 Unauthorized',
+                meaning: 'Não Autorizado: Requer autenticação válida para acessar o recurso.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 404,
+                url: 'https://http.dog/404.jpg',
+                endpoint: '/404.jpg',
+                officialName: 'Not Found',
+                title: '404 Not Found',
+                meaning: 'Não Encontrado: O servidor não encontrou o recurso solicitado.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 409,
+                url: 'https://http.dog/409.jpg',
+                endpoint: '/409.jpg',
+                officialName: 'Conflict',
+                title: '409 Conflict',
+                meaning: 'Conflito: A requisição entrou em conflito com o estado atual do servidor.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 418,
+                url: 'https://http.dog/418.jpg',
+                endpoint: '/418.jpg',
+                officialName: "I'm a teapot",
+                title: "418 I'm a teapot",
+                meaning: 'Sou um bule de chá: Código humorístico (RFC 2324); recusa fazer café.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 423,
+                url: 'https://http.dog/423.jpg',
+                endpoint: '/423.jpg',
+                officialName: 'Locked',
+                title: '423 Locked',
+                meaning: 'Bloqueado: O recurso acessado está trancado no momento (WebDAV).',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 425,
+                url: 'https://http.dog/425.jpg',
+                endpoint: '/425.jpg',
+                officialName: 'Too Early',
+                title: '425 Too Early',
+                meaning: 'Cedo Demais: O servidor recusa processar uma requisição que pode ser repetida (replay).',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 450,
+                url: 'https://http.dog/450.jpg',
+                endpoint: '/450.jpg',
+                officialName: 'Blocked by Windows Parental Controls',
+                title: '450 Blocked by Windows Parental Controls',
+                meaning: 'Bloqueado pelo Controle Parental: Acesso bloqueado por restrição parental do Windows.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 451,
+                url: 'https://http.dog/451.jpg',
+                endpoint: '/451.jpg',
+                officialName: 'Unavailable For Legal Reasons',
+                title: '451 Unavailable For Legal Reasons',
+                meaning: 'Indisponível por Motivos Legais: Conteúdo censurado ou bloqueado por ordem judicial.',
+                category: '4xx',
+                categoryLabel: '4xx • Erro do Cliente'
+            },
+            {
+                code: 507,
+                url: 'https://http.dog/507.jpg',
+                endpoint: '/507.jpg',
+                officialName: 'Insufficient Storage',
+                title: '507 Insufficient Storage',
+                meaning: 'Armazenamento Insuficiente: O servidor não tem espaço livre para concluir a ação.',
+                category: '5xx',
+                categoryLabel: '5xx • Erro do Servidor'
+            },
+            {
+                code: 508,
+                url: 'https://http.dog/508.jpg',
+                endpoint: '/508.jpg',
+                officialName: 'Loop Detected',
+                title: '508 Loop Detected',
+                meaning: 'Loop Detectado: O servidor encontrou um loop infinito ao processar a requisição.',
+                category: '5xx',
+                categoryLabel: '5xx • Erro do Servidor'
+            },
+            {
+                code: 530,
+                url: 'https://http.dog/530.jpg',
+                endpoint: '/530.jpg',
+                officialName: 'Site is frozen / Origin DNS Error',
+                title: '530 Site is frozen / Origin DNS Error',
+                meaning: 'Erro de Origem/DNS: Falha ao resolver ou alcançar o servidor de origem.',
+                category: '5xx',
+                categoryLabel: '5xx • Erro do Servidor'
+            },
+            {
+                code: 561,
+                url: 'https://http.dog/561.jpg',
+                endpoint: '/561.jpg',
+                officialName: 'Unauthorized (AWS ELB)',
+                title: '561 Unauthorized (AWS ELB)',
+                meaning: 'Não Autorizado (Load Balancer): Erro de autenticação específico de balanceador de carga.',
+                category: '5xx',
+                categoryLabel: '5xx • Erro do Servidor'
+            }
+        ];
+
+        /**
+         * Paleta de estilos semânticos por classe HTTP:
+         * 2xx Verde Esmeralda | 3xx Azul Céu | 4xx Âmbar/Laranja | 5xx Vermelho/Rosa
+         */
+        const CATEGORY_STYLES = {
+            '2xx': {
+                badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40',
+                cardBorder: 'border-emerald-500/40',
+                accent: 'from-emerald-500 to-emerald-400',
+                text: 'text-emerald-400'
+            },
+            '3xx': {
+                badge: 'bg-sky-500/15 text-sky-300 border-sky-500/40',
+                cardBorder: 'border-sky-500/40',
+                accent: 'from-sky-500 to-cyan-400',
+                text: 'text-sky-400'
+            },
+            '4xx': {
+                badge: 'bg-amber-500/15 text-amber-300 border-amber-500/40',
+                cardBorder: 'border-amber-500/40',
+                accent: 'from-amber-500 to-orange-400',
+                text: 'text-amber-400'
+            },
+            '5xx': {
+                badge: 'bg-rose-500/15 text-rose-300 border-rose-500/40',
+                cardBorder: 'border-rose-500/40',
+                accent: 'from-rose-500 to-red-400',
+                text: 'text-rose-400'
+            }
+        };
+
+        /**
+         * Estado global da aplicação
+         */
+        const state = {
+            pairCount: 8,            // 6 | 8 | 16 pares
+            hidePhotoCaption: true,  // Oculta a faixa inferior da foto enquanto não combinada
+            cards: [],
+            flippedCards: [],
+            matchedCodes: new Set(),
+            activeEndpoints: [],
+            moves: 0,
+            isLocked: false,
+            timerSeconds: 0,
+            timerInterval: null,
+            gameStarted: false,
+            soundEnabled: true,
+            pendingTimeouts: []
+        };
+
+        /**
+         * Sintetizador de efeitos sonoros via Web Audio API (sem dependências externas)
+         */
+        const SoundFX = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+            },
+            play(type) {
+                if (!state.soundEnabled) return;
+                try {
+                    this.init();
+                    if (!this.ctx) return;
+                    if (this.ctx.state === 'suspended') this.ctx.resume();
+
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    if (type === 'flip') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(420, now);
+                        osc.frequency.exponentialRampToValueAtTime(620, now + 0.07);
+                        gain.gain.setValueAtTime(0.08, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                    } else if (type === 'match') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(523.25, now); // Dó5
+                        osc.frequency.setValueAtTime(659.25, now + 0.09); // Mi5
+                        osc.frequency.setValueAtTime(783.99, now + 0.18); // Sol5
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                        osc.start(now);
+                        osc.stop(now + 0.35);
+                    } else if (type === 'mismatch') {
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(210, now);
+                        osc.frequency.linearRampToValueAtTime(155, now + 0.18);
+                        gain.gain.setValueAtTime(0.06, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                    } else if (type === 'win') {
+                        const notes = [523.25, 659.25, 783.99, 1046.50];
+                        notes.forEach((freq, idx) => {
+                            const o = this.ctx.createOscillator();
+                            const g = this.ctx.createGain();
+                            o.type = 'triangle';
+                            o.connect(g);
+                            g.connect(this.ctx.destination);
+                            o.frequency.setValueAtTime(freq, now + idx * 0.11);
+                            g.gain.setValueAtTime(0.12, now + idx * 0.11);
+                            g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.11 + 0.35);
+                            o.start(now + idx * 0.11);
+                            o.stop(now + idx * 0.11 + 0.35);
+                        });
+                    }
+                } catch (err) {
+                    // Silencia erros de áudio caso o navegador bloqueie autoplay
+                }
+            }
+        };
+
+        /**
+         * Embaralha uma cópia do array usando o algoritmo Fisher-Yates
+         */
+        function shuffleArray(array) {
+            const copy = [...array];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        /**
+         * Cancela timers pendentes antes de reiniciar a partida ou trocar de tela
+         */
+        function clearPendingTimeouts() {
+            state.pendingTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+            state.pendingTimeouts = [];
+        }
+
+        /**
+         * Agenda um timeout e registra para limpeza em reinícios futuros
+         */
+        function scheduleTimeout(callback, delay) {
+            const timeoutId = setTimeout(() => {
+                callback();
+                state.pendingTimeouts = state.pendingTimeouts.filter(id => id !== timeoutId);
+            }, delay);
+            state.pendingTimeouts.push(timeoutId);
+            return timeoutId;
+        }
+
+        /**
+         * Formata segundos totais no padrão MM:SS para o cronômetro
+         */
+        function formatTime(totalSeconds) {
+            const mins = Math.floor(totalSeconds / 60);
+            const secs = totalSeconds % 60;
+            return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        /**
+         * Pré-carrega as imagens JPEG da API http.dog no cache do navegador
+         */
+        function preloadImages(endpoints) {
+            endpoints.forEach(item => {
+                const img = new Image();
+                img.src = item.url;
+            });
+        }
+
+        /**
+         * Inicia ou reinicia uma partida com as configurações atuais (Código <-> Imagem do Cachorro)
+         */
+        function initGame() {
+            clearPendingTimeouts();
+
+            // Para o cronômetro anterior
+            clearInterval(state.timerInterval);
+            state.timerInterval = null;
+            state.timerSeconds = 0;
+            state.gameStarted = false;
+            state.moves = 0;
+            state.flippedCards = [];
+            state.matchedCodes.clear();
+            state.isLocked = false;
+
+            const timerStatusEl = document.getElementById('timer-status');
+            timerStatusEl.textContent = 'pronto';
+            timerStatusEl.classList.remove('text-amber-400', 'text-emerald-400');
+            timerStatusEl.classList.add('text-slate-400');
+
+            // Oculta o modal de vitória caso esteja aberto
+            const victoryModal = document.getElementById('victory-modal');
+            victoryModal.classList.add('hidden');
+            victoryModal.classList.remove('flex');
+
+            // Sorteia os endpoints ativos dentre os 16 testados e pré-carrega as imagens
+            state.activeEndpoints = shuffleArray(HTTP_ENDPOINTS).slice(0, state.pairCount);
+            preloadImages(state.activeEndpoints);
+
+            // Reseta o painel de telemetria HTTP já com a prévia da rodada atual
+            resetInspectorPanel();
+
+            // Monta o baralho de pares: 1 carta de Código HTTP + 1 carta de Imagem do Cachorro
+            const deck = [];
+            state.activeEndpoints.forEach((item) => {
+                deck.push({ type: 'code', data: item });
+                deck.push({ type: 'photo', data: item });
+            });
+
+            state.cards = shuffleArray(deck);
+            renderBoard();
+            updateScoreboard();
+        }
+
+        /**
+         * Restaura o painel de telemetria HTTP no início de uma nova partida
+         */
+        function resetInspectorPanel() {
+            document.getElementById('inspector-request').textContent = 'GET https://http.dog/{codigo}.jpg';
+            document.getElementById('inspector-http-status').textContent = 'Status: 200 OK (image/jpeg • Cache Cloudflare)';
+
+            const catEl = document.getElementById('inspector-category');
+            catEl.textContent = 'Aguardando Par';
+            catEl.className = 'self-start sm:self-auto px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#0b1120] text-slate-300 border border-slate-700 shrink-0';
+
+            document.getElementById('inspector-title').textContent =
+                'Vire duas cartas para relacionar o Código HTTP com a Foto do Cachorro!';
+            document.getElementById('inspector-desc').textContent =
+                'Ao acertar um par (ou clicar em cartas já combinadas), a explicação completa do status aparecerá aqui.';
+
+            const sampleItem = state.activeEndpoints[0] || HTTP_ENDPOINTS[0];
+            document.getElementById('inspector-thumb').src = sampleItem.url;
+            document.getElementById('inspector-endpoint-short').textContent = sampleItem.endpoint;
+        }
+
+        /**
+         * Renderiza todas as cartas no tabuleiro de forma responsiva
+         */
+        function renderBoard() {
+            const board = document.getElementById('game-board');
+            board.innerHTML = '';
+
+            // Ajusta o grid e a altura mínima das cartas conforme a quantidade de pares
+            if (state.pairCount === 16) {
+                board.className = 'w-full grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3';
+            } else if (state.pairCount === 6) {
+                board.className = 'w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 sm:gap-4';
+            } else {
+                board.className = 'w-full grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4';
+            }
+
+            const cardHeightClass = state.pairCount === 16
+                ? 'h-36 sm:h-40 lg:h-44'
+                : 'h-40 sm:h-48 lg:h-52';
+
+            state.cards.forEach((card, index) => {
+                const item = card.data;
+                const style = CATEGORY_STYLES[item.category];
+
+                const cardEl = document.createElement('div');
+                cardEl.className = `card-container ${cardHeightClass} cursor-pointer group`;
+                cardEl.dataset.index = index;
+
+                // Face frontal varia entre Carta de Código HTTP e Carta de Foto do Cachorro
+                let frontHTML = '';
+                if (card.type === 'code') {
+                    frontHTML = `
+                        <div class="card-face card-front bg-[#131c31] border-2 ${style.cardBorder} p-2.5 sm:p-3.5 flex flex-col justify-between shadow-lg">
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${style.badge} truncate">
+                                    ${item.categoryLabel}
+                                </span>
+                                <span class="text-[10px] font-mono text-slate-400 shrink-0">CÓDIGO</span>
+                            </div>
+
+                            <div class="my-auto text-center px-1">
+                                <div class="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight ${style.text}">
+                                    ${item.code}
+                                </div>
+                                <div class="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-2 mt-0.5">
+                                    ${item.officialName}
+                                </div>
+                            </div>
+
+                            <p class="text-[10px] sm:text-[11px] text-slate-300 leading-snug line-clamp-2 border-t border-slate-800 pt-1.5">
+                                ${item.meaning}
+                            </p>
+                        </div>
+                    `;
+                } else {
+                    const photoClass = state.hidePhotoCaption ? 'photo-cropped' : 'photo-full';
+                    frontHTML = `
+                        <div class="card-face card-front bg-[#090d16] border-2 border-slate-700/90 relative shadow-lg">
+                            <!-- Skeleton animado durante o carregamento da imagem -->
+                            <div class="skeleton-loader absolute inset-0" data-skeleton></div>
+
+                            <img
+                                data-dog-photo
+                                src="${item.url}"
+                                alt="Cachorro representando o status HTTP ${item.code}"
+                                loading="lazy"
+                                class="${photoClass} relative z-10"
+                                onload="const sk = this.parentElement && this.parentElement.querySelector('[data-skeleton]'); if (sk) sk.remove();"
+                                onerror="this.onerror=null; const sk = this.parentElement && this.parentElement.querySelector('[data-skeleton]'); if (sk) sk.remove(); this.src='https://placehold.co/400x300/0f172a/38bdf8?text=HTTP+${item.code}';"
+                            >
+
+                            <!-- Etiqueta superior discreta -->
+                            <div class="absolute top-2 left-2 z-20 px-1.5 py-0.5 rounded bg-slate-950/80 backdrop-blur-sm border border-slate-700/80 text-[10px] font-mono text-slate-300">
+                                FOTO API
+                            </div>
+
+                            <!-- Selo verde exibido após o jogador combinar o par -->
+                            <div data-photo-badge class="hidden absolute bottom-2 inset-x-2 z-20 items-center justify-between px-2 py-1 rounded-lg bg-emerald-950/90 backdrop-blur-sm border border-emerald-500/50 text-[11px] font-mono font-bold text-emerald-300 shadow">
+                                <span>✓ ${item.endpoint}</span>
+                                <span>200 OK</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                cardEl.innerHTML = `
+                    <div class="card-inner">
+                        <!-- Verso da Carta -->
+                        <div class="card-face card-back card-back-pattern border border-slate-700/90 group-hover:border-cyan-500/60 transition-colors p-3 flex flex-col items-center justify-center shadow-md">
+                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 group-hover:border-cyan-500/50 flex items-center justify-center text-cyan-400 transition-transform group-hover:scale-105">
+                                <span class="font-mono font-extrabold text-sm sm:text-base">HTTP</span>
+                            </div>
+                            <span class="mt-2 text-[10px] font-mono tracking-widest uppercase text-slate-400 group-hover:text-cyan-300 transition-colors">
+                                .DOG
+                            </span>
+                        </div>
+                        ${frontHTML}
+                    </div>
+                `;
+
+                cardEl.addEventListener('click', () => handleCardClick(index, cardEl));
+                board.appendChild(cardEl);
+            });
+        }
+
+        /**
+         * Atualiza o painel inferior de telemetria e aprendizado ao acertar ou inspecionar um par
+         */
+        function updateInspectorOnMatch(item) {
+            const style = CATEGORY_STYLES[item.category];
+
+            document.getElementById('inspector-request').textContent = `GET ${item.url}`;
+            document.getElementById('inspector-http-status').textContent =
+                'Status: 200 OK (image/jpeg • Cache Cloudflare)';
+
+            const catEl = document.getElementById('inspector-category');
+            catEl.textContent = item.categoryLabel;
+            catEl.className = `self-start sm:self-auto px-2.5 py-1 rounded-lg text-xs font-mono font-bold border shrink-0 ${style.badge}`;
+
+            document.getElementById('inspector-title').textContent = `${item.title} — Par Relacionado!`;
+            document.getElementById('inspector-desc').textContent =
+                `${item.meaning} (Arquivo estático servido via ${item.endpoint})`;
+
+            document.getElementById('inspector-thumb').src = item.url;
+            document.getElementById('inspector-endpoint-short').textContent = item.endpoint;
+        }
+
+        /**
+         * Inicia o cronômetro na primeira interação do usuário
+         */
+        function startTimerIfNeeded() {
+            if (state.gameStarted) return;
+            state.gameStarted = true;
+            const timerStatusEl = document.getElementById('timer-status');
+            timerStatusEl.textContent = 'ativo';
+            timerStatusEl.classList.remove('text-slate-400', 'text-emerald-400');
+            timerStatusEl.classList.add('text-amber-400');
+
+            state.timerInterval = setInterval(() => {
+                state.timerSeconds++;
+                document.getElementById('stat-timer').textContent = formatTime(state.timerSeconds);
+            }, 1000);
+        }
+
+        /**
+         * Trata o clique/toque em uma carta do tabuleiro
+         */
+        function handleCardClick(index, cardEl) {
+            const cardData = state.cards[index];
+
+            // Se a carta já foi combinada, permite clicar para inspecioná-la no painel de telemetria
+            if (state.matchedCodes.has(cardData.data.code)) {
+                updateInspectorOnMatch(cardData.data);
+                return;
+            }
+
+            // Ignora cliques se tabuleiro estiver travado ou carta já estiver virada na jogada atual
+            if (
+                state.isLocked ||
+                state.flippedCards.some(item => item.index === index)
+            ) {
+                return;
+            }
+
+            startTimerIfNeeded();
+            SoundFX.play('flip');
+
+            // Vira a carta
+            cardEl.classList.add('is-flipped');
+            state.flippedCards.push({ index, el: cardEl, card: cardData });
+
+            // Quando duas cartas estiverem viradas, verifica se formam par (Código <-> Foto)
+            if (state.flippedCards.length === 2) {
+                state.moves++;
+                checkForMatch();
+            }
+        }
+
+        /**
+         * Verifica se as duas cartas viradas possuem o mesmo código de status HTTP
+         */
+        function checkForMatch() {
+            const [first, second] = state.flippedCards;
+            const isMatch = first.card.data.code === second.card.data.code;
+
+            if (isMatch) {
+                const matchedItem = first.card.data;
+                state.matchedCodes.add(matchedItem.code);
+
+                first.el.classList.add('is-matched');
+                second.el.classList.add('is-matched');
+
+                // Remove o recorte/zoom da foto para revelar a imagem completa da API e exibe a etiqueta verde
+                [first.el, second.el].forEach(el => {
+                    const photoImg = el.querySelector('[data-dog-photo]');
+                    if (photoImg) {
+                        photoImg.classList.remove('photo-cropped');
+                        photoImg.classList.add('photo-full');
+                    }
+
+                    const badge = el.querySelector('[data-photo-badge]');
+                    if (badge) {
+                        badge.classList.remove('hidden');
+                        badge.classList.add('flex');
+                    }
+                });
+
+                SoundFX.play('match');
+                updateInspectorOnMatch(matchedItem);
+                state.flippedCards = [];
+                updateScoreboard();
+
+                // Verifica condição de vitória
+                if (state.matchedCodes.size === state.pairCount) {
+                    handleVictory();
+                }
+            } else {
+                state.isLocked = true;
+                SoundFX.play('mismatch');
+
+                scheduleTimeout(() => {
+                    first.el.classList.add('is-mismatch');
+                    second.el.classList.add('is-mismatch');
+                }, 220);
+
+                scheduleTimeout(() => {
+                    first.el.classList.remove('is-flipped', 'is-mismatch');
+                    second.el.classList.remove('is-flipped', 'is-mismatch');
+                    state.flippedCards = [];
+                    state.isLocked = false;
+                }, 950);
+
+                updateScoreboard();
+            }
+        }
+
+        /**
+         * Atualiza os contadores visuais do placar
+         */
+        function updateScoreboard() {
+            const matched = state.matchedCodes.size;
+            const total = state.pairCount;
+            const percent = Math.round((matched / total) * 100);
+            const accuracy = state.moves === 0 ? 100 : Math.round((matched / state.moves) * 100);
+
+            document.getElementById('stat-pairs').textContent = `${matched} / ${total}`;
+            document.getElementById('stat-percent').textContent = `${percent}%`;
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+            document.getElementById('stat-moves').textContent = state.moves;
+            document.getElementById('stat-accuracy').textContent = `${accuracy}%`;
+            document.getElementById('stat-timer').textContent = formatTime(state.timerSeconds);
+        }
+
+        /**
+         * Finaliza a partida, para o cronômetro e abre o modal de vitória
+         */
+        function handleVictory() {
+            clearInterval(state.timerInterval);
+            document.getElementById('timer-status').textContent = 'concluído';
+            document.getElementById('timer-status').classList.replace('text-amber-400', 'text-emerald-400');
+
+            scheduleTimeout(() => {
+                SoundFX.play('win');
+
+                const accuracy = state.moves === 0 ? 100 : Math.round((state.pairCount / state.moves) * 100);
+                document.getElementById('win-time').textContent = formatTime(state.timerSeconds);
+                document.getElementById('win-moves').textContent = state.moves;
+                document.getElementById('win-accuracy').textContent = `${accuracy}%`;
+                document.getElementById('victory-subtitle').textContent =
+                    `Você relacionou todos os ${state.pairCount} códigos de status HTTP às suas fotos correspondentes.`;
+
+                // Preenche os badges dos códigos aprendidos
+                const codesList = document.getElementById('win-codes-list');
+                codesList.innerHTML = '';
+                state.activeEndpoints
+                    .slice()
+                    .sort((a, b) => a.code - b.code)
+                    .forEach(item => {
+                        const style = CATEGORY_STYLES[item.category];
+                        const badge = document.createElement('span');
+                        badge.className = `px-2 py-1 rounded-lg text-xs font-mono font-semibold border ${style.badge}`;
+                        badge.textContent = item.title;
+                        codesList.appendChild(badge);
+                    });
+
+                const modal = document.getElementById('victory-modal');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }, 450);
+        }
+
+        /**
+         * Popula o modal de guia rápido com os 16 endpoints testados
+         */
+        function populateGuideModal() {
+            const container = document.getElementById('guide-list');
+            container.innerHTML = '';
+
+            HTTP_ENDPOINTS.forEach(item => {
+                const style = CATEGORY_STYLES[item.category];
+                const card = document.createElement('div');
+                card.className = 'flex items-center gap-3 p-3 rounded-2xl bg-[#0b1120]/90 border border-slate-700/80 hover:border-slate-600 transition';
+                card.innerHTML = `
+                    <img src="${item.url}" alt="${item.title}" loading="lazy" class="w-16 h-14 object-cover rounded-xl border border-slate-700 shrink-0 bg-slate-900">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-mono text-xs font-bold text-cyan-400">${item.endpoint}</span>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold border ${style.badge}">${item.categoryLabel}</span>
+                        </div>
+                        <div class="text-xs font-bold text-white truncate mt-0.5">${item.title}</div>
+                        <p class="text-[11px] text-slate-300 leading-snug mt-0.5">${item.meaning}</p>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        /**
+         * Atualiza visualmente os botões de tamanho de tabuleiro (6, 8 ou 16 pares)
+         */
+        function updateSizeButtonsUI(selectedSize) {
+            document.querySelectorAll('.size-btn').forEach(btn => {
+                const size = Number(btn.dataset.size);
+                if (size === selectedSize) {
+                    btn.className = 'size-btn flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all bg-cyan-500 text-slate-950 shadow-sm';
+                } else {
+                    btn.className = 'size-btn flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold transition-all text-slate-400 hover:text-white';
+                }
+            });
+        }
+
+        /**
+         * Configura os listeners de botões, switch de legenda e modais
+         */
+        function setupEventListeners() {
+            // Switch: Ocultar legenda da foto (permite revelar ou ocultar em tempo real nas cartas não combinadas)
+            const toggleHideCaption = document.getElementById('toggle-hide-caption');
+            toggleHideCaption.addEventListener('change', (e) => {
+                state.hidePhotoCaption = e.target.checked;
+
+                document.querySelectorAll('.card-container').forEach((cardEl) => {
+                    const index = Number(cardEl.dataset.index);
+                    const cardData = state.cards[index];
+                    if (!cardData || cardData.type !== 'photo') return;
+
+                    const isMatched = state.matchedCodes.has(cardData.data.code);
+                    const imgEl = cardEl.querySelector('[data-dog-photo]');
+                    if (!imgEl) return;
+
+                    if (state.hidePhotoCaption && !isMatched) {
+                        imgEl.classList.remove('photo-full');
+                        imgEl.classList.add('photo-cropped');
+                    } else {
+                        imgEl.classList.remove('photo-cropped');
+                        imgEl.classList.add('photo-full');
+                    }
+                });
+            });
+
+            // Seletor de Tamanho: 6 Pares, 8 Pares ou Completo (16 Pares)
+            document.querySelectorAll('.size-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const newSize = Number(btn.dataset.size);
+                    if (state.pairCount === newSize) return;
+                    state.pairCount = newSize;
+                    updateSizeButtonsUI(newSize);
+                    initGame();
+                });
+            });
+
+            // Nova Partida
+            document.getElementById('btn-restart').addEventListener('click', initGame);
+            document.getElementById('btn-play-again').addEventListener('click', initGame);
+
+            // Toggle de Áudio (Desktop & Mobile)
+            const toggleSound = () => {
+                state.soundEnabled = !state.soundEnabled;
+                document.querySelectorAll('.audio-icon').forEach(icon => {
+                    icon.textContent = state.soundEnabled ? '🔊' : '🔇';
+                });
+            };
+            document.getElementById('btn-audio-desktop').addEventListener('click', toggleSound);
+            document.getElementById('btn-audio-mobile').addEventListener('click', toggleSound);
+
+            // Modal de Vitória (fechar para observar o tabuleiro ou clique fora)
+            const victoryModal = document.getElementById('victory-modal');
+            const closeVictory = () => {
+                victoryModal.classList.add('hidden');
+                victoryModal.classList.remove('flex');
+            };
+            document.getElementById('btn-view-board').addEventListener('click', closeVictory);
+            victoryModal.addEventListener('click', (e) => {
+                if (e.target === victoryModal) closeVictory();
+            });
+
+            // Modal Guia dos 16 Endpoints
+            const guideModal = document.getElementById('guide-modal');
+            const openGuide = () => {
+                guideModal.classList.remove('hidden');
+                guideModal.classList.add('flex');
+            };
+            const closeGuide = () => {
+                guideModal.classList.add('hidden');
+                guideModal.classList.remove('flex');
+            };
+
+            document.getElementById('btn-guide-desktop').addEventListener('click', openGuide);
+            document.getElementById('btn-guide-mobile').addEventListener('click', openGuide);
+            document.getElementById('btn-close-guide').addEventListener('click', closeGuide);
+            guideModal.addEventListener('click', (e) => {
+                if (e.target === guideModal) closeGuide();
+            });
+
+            // Atalho de teclado Esc para fechar modais abertos
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeGuide();
+                    closeVictory();
+                }
+            });
+        }
+
+        // Inicialização no carregamento da página
+        window.addEventListener('DOMContentLoaded', () => {
+            populateGuideModal();
+            setupEventListeners();
+            initGame();
+        });
+    </script>
+</body>
+</html>
